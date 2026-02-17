@@ -6,4 +6,4 @@ on:
 
 jobs:
   release:
-    uses: jackd248/reusable-github-actions/.github/workflows/release.yml@main
+    uses: konradmichalik/reusable-github-actions/.github/workflows/release.yml@main

@@ -2,9 +2,9 @@
 
 # Php Ico File Loader
 
-[![Coverage](https://img.shields.io/coverallsCoverage/github/jackd248/php-ico-file-loader?logo=coveralls)](https://coveralls.io/github/jackd248/php-ico-file-loader)
-[![CGL](https://img.shields.io/github/actions/workflow/status/jackd248/php-ico-file-loader/cgl.yml?label=cgl&logo=github)](https://github.com/jackd248/php-ico-file-loader/actions/workflows/cgl.yml)
-[![Tests](https://img.shields.io/github/actions/workflow/status/jackd248/php-ico-file-loader/tests.yml?label=tests&logo=github)](https://github.com/jackd248/php-ico-file-loader/actions/workflows/tests.yml)
+[![Coverage](https://img.shields.io/coverallsCoverage/github/konradmichalik/php-ico-file-loader?logo=coveralls)](https://coveralls.io/github/konradmichalik/php-ico-file-loader)
+[![CGL](https://img.shields.io/github/actions/workflow/status/konradmichalik/php-ico-file-loader/cgl.yml?label=cgl&logo=github)](https://github.com/konradmichalik/php-ico-file-loader/actions/workflows/cgl.yml)
+[![Tests](https://img.shields.io/github/actions/workflow/status/konradmichalik/php-ico-file-loader/tests.yml?label=tests&logo=github)](https://github.com/konradmichalik/php-ico-file-loader/actions/workflows/tests.yml)
 [![Supported PHP Versions](https://img.shields.io/packagist/dependency-v/konradmichalik/php-ico-file-loader/php?logo=php)](https://packagist.org/packages/konradmichalik/php-ico-file-loader)
 
 </div>

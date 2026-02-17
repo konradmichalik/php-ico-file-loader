@@ -11,7 +11,7 @@ Thank you for considering contributing to this project! Every contribution is we
 
 ```bash
 # Clone repository
-git clone https://github.com/jackd248/php-ico-file-loader.git
+git clone https://github.com/konradmichalik/php-ico-file-loader.git
 cd php-ico-file-loader
 
 # Install dependencies
