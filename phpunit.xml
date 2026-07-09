@@ -3,7 +3,9 @@
          xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
          displayDetailsOnTestsThatTriggerWarnings="true"
          displayDetailsOnTestsThatTriggerNotices="true"
+         displayDetailsOnTestsThatTriggerDeprecations="true"
          displayDetailsOnSkippedTests="true"
+         failOnDeprecation="true"
          bootstrap="tests/bootstrap.php"
          colors="true"
 >

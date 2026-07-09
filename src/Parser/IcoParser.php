@@ -118,7 +118,6 @@ class IcoParser implements ParserInterface
         $w = imagesx($png);
         $h = imagesy($png);
         $bits = imageistruecolor($png) ? 32 : 8;
-        imagedestroy($png);
 
         $icoDirEntry = [
             'width' => $w,

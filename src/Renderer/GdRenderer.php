@@ -88,7 +88,6 @@ class GdRenderer implements RendererInterface
     protected function resize(GdImage $gd, int $w, int $h): mixed
     {
         $resized = imagescale($gd, $w, $h);
-        imagedestroy($gd);
 
         return $resized;
     }
@@ -108,7 +107,6 @@ class GdRenderer implements RendererInterface
             $colVal = $this->allocateColor($gd, $col[0], $col[1], $col[2]);
             imagefilledrectangle($gd, 0, 0, $img->width, $img->height, $colVal);
             imagecopy($gd, $im, 0, 0, 0, 0, $img->width, $img->height);
-            imagedestroy($im);
             $im = $gd;
         }
 
