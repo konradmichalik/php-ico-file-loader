@@ -73,4 +73,19 @@ final class GdRendererTest extends IcoTestCase
         $icon = $this->parseIcon('32bit-png-sample.ico');
         $renderer->render($icon[11], ['background' => 'this is garbage']);
     }
+
+    public function testResizeWhenOnlyOneDimensionDiffers(): void
+    {
+        $renderer = new GdRenderer();
+        $icon = $this->parseIcon('24bit-32px-sample.ico');
+        $image = $icon[0];
+        $this->assertSame(32, $image->width);
+        $this->assertSame(32, $image->height);
+
+        // width already matches the source (32), only the height differs
+        $im = $renderer->render($image, ['w' => 32, 'h' => 64]);
+
+        $this->assertSame(32, imagesx($im));
+        $this->assertSame(64, imagesy($im));
+    }
 }

@@ -57,7 +57,7 @@ class GdRenderer implements RendererInterface
             $gd = $this->renderBmpImage($img, $opts['background']);
         }
 
-        if ((imagesx($gd) !== $opts['w']) && (imagesy($gd) !== $opts['h'])) {
+        if ((imagesx($gd) !== $opts['w']) || (imagesy($gd) !== $opts['h'])) {
             $resized = $this->resize($gd, $opts['w'], $opts['h']);
             if (false !== $resized) {
                 $gd = $resized;
