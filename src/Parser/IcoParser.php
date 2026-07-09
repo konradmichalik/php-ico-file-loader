@@ -36,6 +36,7 @@ class IcoParser implements ParserInterface
     private const ICO_RESERVED = 0;
     private const DEFAULT_COLOR_COUNT = 256;
     private const DEFAULT_DIMENSION = 256;
+    private const MAX_PNG_PIXELS = 16777216; // 4096 x 4096
 
     public function isSupportedBinaryString(string $data): bool
     {
@@ -99,6 +100,10 @@ class IcoParser implements ParserInterface
         $data = $this->parseIconDirEntries($icon, $data, $icondir['Count']);
 
         foreach ($icon as $iconImage) {
+            if ($iconImage->fileOffset < 0) {
+                throw new InvalidArgumentException('Invalid image offset in icon directory entry');
+            }
+
             if ($this->isPNG(substr($data, $iconImage->fileOffset, 4))) {
                 $this->parsePng($iconImage, $data);
             } else {
@@ -111,6 +116,11 @@ class IcoParser implements ParserInterface
 
     private function parsePNGAsIco(string $data): Icon
     {
+        $info = getimagesizefromstring($data);
+        if (false !== $info && ($info[0] * $info[1]) > self::MAX_PNG_PIXELS) {
+            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], self::MAX_PNG_PIXELS));
+        }
+
         $png = imagecreatefromstring($data);
         if (false === $png) {
             throw new InvalidArgumentException('Invalid PNG data');
