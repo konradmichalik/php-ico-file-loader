@@ -252,9 +252,27 @@ class GdRenderer implements RendererInterface
         }
     }
 
+    private function assertSufficientBitmapData(IconImage $img): void
+    {
+        $maskWidth = $img->width;
+        if (($maskWidth % self::MASK_ROW_ALIGNMENT) > 0) {
+            $maskWidth += self::MASK_ROW_ALIGNMENT - ($img->width % self::MASK_ROW_ALIGNMENT);
+        }
+
+        $required = (int) ($img->width * $img->height * $img->bitCount / self::BITS_PER_BYTE)
+            + (int) ($maskWidth * $img->height / self::BITS_PER_BYTE);
+        $actual = strlen($img->bmpData);
+
+        if ($actual < $required) {
+            throw new InvalidArgumentException(sprintf('Insufficient bitmap data: need %d bytes, got %d', $required, $actual));
+        }
+    }
+
     private function render24bit(IconImage $img, GdImage $gd): void
     {
         // 24 bits: 3 bytes per pixel [ B | G | R ].
+        $this->assertSufficientBitmapData($img);
+
         $maskBits = $this->buildMaskBits($img);
 
         // Unpack for better performance
@@ -310,6 +328,8 @@ class GdRenderer implements RendererInterface
     private function render8bit(IconImage $img, GdImage $gd): void
     {
         // 8 bits: 1 byte per pixel [ COLOR INDEX ].
+        $this->assertSufficientBitmapData($img);
+
         $palette = $this->buildPalette($img, $gd);
         $maskBits = $this->buildMaskBits($img);
 
@@ -359,6 +379,8 @@ class GdRenderer implements RendererInterface
     private function render4bit(IconImage $img, GdImage $gd): void
     {
         // 4 bits: half byte/nibble per pixel [ COLOR INDEX ].
+        $this->assertSufficientBitmapData($img);
+
         $palette = $this->buildPalette($img, $gd);
         $maskBits = $this->buildMaskBits($img);
 
@@ -391,6 +413,8 @@ class GdRenderer implements RendererInterface
     private function render1bit(IconImage $img, GdImage $gd): void
     {
         // 1 bit: 1 bit per pixel (2 colors, usually black&white) [ COLOR INDEX ].
+        $this->assertSufficientBitmapData($img);
+
         $palette = $this->buildPalette($img, $gd);
         $maskBits = $this->buildMaskBits($img);
 

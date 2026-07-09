@@ -75,6 +75,30 @@ final class GdRendererTest extends IcoTestCase
         $renderer->render($icon[11], ['background' => 'this is garbage']);
     }
 
+    public function testTruncated8bitBitmapDataIsRejected(): void
+    {
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 8, 'colorCount' => 2]);
+        $image->addToBmpPalette(0, 0, 0, 255);
+        $image->addToBmpPalette(255, 255, 255, 255);
+        $image->setBitmapData("\x00\x00");
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Insufficient bitmap data');
+
+        (new GdRenderer())->render($image);
+    }
+
+    public function testTruncated24bitBitmapDataIsRejected(): void
+    {
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 24]);
+        $image->setBitmapData("\x00\x00\x00");
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Insufficient bitmap data');
+
+        (new GdRenderer())->render($image);
+    }
+
     public function testResizeWhenOnlyOneDimensionDiffers(): void
     {
         $renderer = new GdRenderer();
