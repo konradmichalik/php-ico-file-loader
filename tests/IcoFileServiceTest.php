@@ -81,6 +81,33 @@ final class IcoFileServiceTest extends IcoTestCase
         $service->fromFile('not a file');
     }
 
+    public function testFromFileRejectsPharWrapper(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Stream wrappers are not allowed');
+
+        $service = new IcoFileService();
+        $service->fromFile('phar://./tests/assets/32bit-16px-32px-sample.ico');
+    }
+
+    public function testFromFileRejectsRemoteUrl(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Stream wrappers are not allowed');
+
+        $service = new IcoFileService();
+        $service->fromFile('https://example.com/favicon.ico');
+    }
+
+    public function testFromRejectsStreamWrapperInput(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Stream wrappers are not allowed');
+
+        $service = new IcoFileService();
+        $service->from('php://filter/read=convert.base64-encode/resource=/etc/passwd');
+    }
+
     public function testIterateExample(): void
     {
         $service = new IcoFileService();

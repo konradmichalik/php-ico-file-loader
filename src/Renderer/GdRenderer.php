@@ -41,6 +41,7 @@ class GdRenderer implements RendererInterface
     private const ALPHA_SHIFT = 24;
     private const RED_SHIFT = 16;
     private const GREEN_SHIFT = 8;
+    private const MAX_PNG_PIXELS = 16777216; // 4096 x 4096
 
     /**
      * @param array<string, mixed>|null $opts
@@ -57,7 +58,7 @@ class GdRenderer implements RendererInterface
             $gd = $this->renderBmpImage($img, $opts['background']);
         }
 
-        if ((imagesx($gd) !== $opts['w']) && (imagesy($gd) !== $opts['h'])) {
+        if ((imagesx($gd) !== $opts['w']) || (imagesy($gd) !== $opts['h'])) {
             $resized = $this->resize($gd, $opts['w'], $opts['h']);
             if (false !== $resized) {
                 $gd = $resized;
@@ -88,13 +89,17 @@ class GdRenderer implements RendererInterface
     protected function resize(GdImage $gd, int $w, int $h): mixed
     {
         $resized = imagescale($gd, $w, $h);
-        imagedestroy($gd);
 
         return $resized;
     }
 
     protected function renderPngImage(IconImage $img, ?string $hexBackgroundColor): GdImage
     {
+        $info = getimagesizefromstring($img->pngData);
+        if (false !== $info && ($info[0] * $info[1]) > self::MAX_PNG_PIXELS) {
+            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], self::MAX_PNG_PIXELS));
+        }
+
         $im = imagecreatefromstring($img->pngData);
         if (false === $im) {
             throw new InvalidArgumentException('Invalid PNG data');
@@ -108,7 +113,6 @@ class GdRenderer implements RendererInterface
             $colVal = $this->allocateColor($gd, $col[0], $col[1], $col[2]);
             imagefilledrectangle($gd, 0, 0, $img->width, $img->height, $colVal);
             imagecopy($gd, $im, 0, 0, 0, 0, $img->width, $img->height);
-            imagedestroy($im);
             $im = $gd;
         }
 

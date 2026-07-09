@@ -98,4 +98,33 @@ final class GdRendererTest extends IcoTestCase
 
         (new GdRenderer())->render($image);
     }
+
+    public function testResizeWhenOnlyOneDimensionDiffers(): void
+    {
+        $renderer = new GdRenderer();
+        $icon = $this->parseIcon('24bit-32px-sample.ico');
+        $image = $icon[0];
+        $this->assertSame(32, $image->width);
+        $this->assertSame(32, $image->height);
+
+        // width already matches the source (32), only the height differs
+        $im = $renderer->render($image, ['w' => 32, 'h' => 64]);
+
+        $this->assertSame(32, imagesx($im));
+        $this->assertSame(64, imagesy($im));
+    }
+
+    public function testOversizedPngIsRejected(): void
+    {
+        $ihdr = pack('NN', 100000, 100000)."\x08\x06\x00\x00\x00";
+        $bombPng = "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$ihdr.pack('N', crc32('IHDR'.$ihdr));
+
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
+        $image->setPngFile($bombPng);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size');
+
+        (new GdRenderer())->render($image);
+    }
 }

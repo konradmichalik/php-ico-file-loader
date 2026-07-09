@@ -13,9 +13,12 @@ declare(strict_types=1);
 
 namespace KonradMichalik\PhpIcoFileLoader\Tests\Parser;
 
+use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\Model\Icon;
 use KonradMichalik\PhpIcoFileLoader\Parser\IcoParser;
 use KonradMichalik\PhpIcoFileLoader\Tests\IcoTestCase;
+
+use function strlen;
 
 /**
  * IcoParserTest.
@@ -109,5 +112,53 @@ final class IcoParserTest extends IcoTestCase
         $parser = new IcoParser();
         $icon = $parser->parse(file_get_contents('./tests/assets/empty.ico'));
         $this->assertCount(0, $icon);
+    }
+
+    public function testTruncatedPaletteThrowsInvalidArgument(): void
+    {
+        // 8-bit BMP declaring 256 colors (colorCount 0 => 256) but only 2 palette entries present
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 8, 16, 1, 8, 0, 0, 0, 0, 0, 0);
+        $truncatedPalette = str_repeat("\x00", 8);
+        $imageData = $bmpInfoHeader.$truncatedPalette;
+
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 8, 8, 0, 0, 1, 8, strlen($imageData), 22);
+        $ico = $icoHeader.$dirEntry.$imageData;
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $parser = new IcoParser();
+        $parser->parse($ico);
+    }
+
+    public function testNegativeImageOffsetThrows(): void
+    {
+        // fileOffset 0 becomes negative once the header/dir-entry region is subtracted
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 4, 4, 1, 32, 0, 0, 0, 0, 0, 0);
+        $imageData = $bmpInfoHeader.str_repeat("\xAA", 200);
+
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 4, 4, 0, 0, 1, 32, strlen($imageData), 0);
+        $ico = $icoHeader.$dirEntry.$imageData;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid image offset');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testOversizedPngIsRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size');
+
+        (new IcoParser())->parse(self::bombPng(100000, 100000));
+    }
+
+    private static function bombPng(int $width, int $height): string
+    {
+        $ihdr = pack('NN', $width, $height)."\x08\x06\x00\x00\x00";
+
+        return "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$ihdr.pack('N', crc32('IHDR'.$ihdr));
     }
 }
