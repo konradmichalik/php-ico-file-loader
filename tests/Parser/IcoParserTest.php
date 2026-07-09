@@ -13,9 +13,12 @@ declare(strict_types=1);
 
 namespace KonradMichalik\PhpIcoFileLoader\Tests\Parser;
 
+use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\Model\Icon;
 use KonradMichalik\PhpIcoFileLoader\Parser\IcoParser;
 use KonradMichalik\PhpIcoFileLoader\Tests\IcoTestCase;
+
+use function strlen;
 
 /**
  * IcoParserTest.
@@ -109,5 +112,22 @@ final class IcoParserTest extends IcoTestCase
         $parser = new IcoParser();
         $icon = $parser->parse(file_get_contents('./tests/assets/empty.ico'));
         $this->assertCount(0, $icon);
+    }
+
+    public function testTruncatedPaletteThrowsInvalidArgument(): void
+    {
+        // 8-bit BMP declaring 256 colors (colorCount 0 => 256) but only 2 palette entries present
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 8, 16, 1, 8, 0, 0, 0, 0, 0, 0);
+        $truncatedPalette = str_repeat("\x00", 8);
+        $imageData = $bmpInfoHeader.$truncatedPalette;
+
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 8, 8, 0, 0, 1, 8, strlen($imageData), 22);
+        $ico = $icoHeader.$dirEntry.$imageData;
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $parser = new IcoParser();
+        $parser->parse($ico);
     }
 }

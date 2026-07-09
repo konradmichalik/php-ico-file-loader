@@ -229,6 +229,11 @@ class IcoParser implements ParserInterface
 
         // Extract and parse palette data efficiently using unpack
         $paletteData = substr($data, $paletteOffset, $paletteSize);
+
+        if (strlen($paletteData) < $paletteSize) {
+            throw new InvalidArgumentException(sprintf('Invalid palette data: required %d bytes, but only %d available', $paletteSize, strlen($paletteData)));
+        }
+
         $paletteBytes = unpack('C*', $paletteData);
 
         if (false === $paletteBytes) {
