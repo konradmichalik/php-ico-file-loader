@@ -15,7 +15,6 @@ namespace KonradMichalik\PhpIcoFileLoader\Model;
 
 use InvalidArgumentException;
 
-use function array_key_exists;
 use function sprintf;
 
 /**
@@ -26,6 +25,12 @@ use function sprintf;
  */
 class IconImage
 {
+    private const ALLOWED_PROPERTIES = [
+        'width' => true, 'height' => true, 'colorCount' => true, 'reserved' => true,
+        'planes' => true, 'bitCount' => true, 'sizeInBytes' => true, 'fileOffset' => true,
+        'bmpHeaderSize' => true, 'bmpHeaderWidth' => true, 'bmpHeaderHeight' => true,
+        'pngData' => true, 'bmpData' => true, 'palette' => true,
+    ];
     public int $width = 0;
     public int $height = 0;
     public int $colorCount = 0;
@@ -52,15 +57,8 @@ class IconImage
      */
     public function __construct(array $data)
     {
-        $allowedProperties = [
-            'width', 'height', 'colorCount', 'reserved', 'planes',
-            'bitCount', 'sizeInBytes', 'fileOffset',
-            'bmpHeaderSize', 'bmpHeaderWidth', 'bmpHeaderHeight',
-            'pngData', 'bmpData', 'palette',
-        ];
-
         foreach ($data as $name => $value) {
-            if (!array_key_exists($name, array_flip($allowedProperties))) {
+            if (!isset(self::ALLOWED_PROPERTIES[$name])) {
                 throw new InvalidArgumentException(sprintf('Unknown property: %s', $name));
             }
             $this->$name = $value;
