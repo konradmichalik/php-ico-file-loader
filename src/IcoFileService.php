@@ -124,14 +124,22 @@ class IcoFileService
     }
 
     /**
-     * Loads icon from file.
+     * Loads icon from a local file path.
      *
-     * @param string $file filename or URL (if fopen wrappers installed)
+     * Stream wrappers (e.g. phar://, php://, http://) are rejected to avoid SSRF,
+     * local file disclosure and phar deserialization. To load a remote icon, fetch
+     * the bytes yourself and pass them to fromString().
      *
-     * @throws InvalidArgumentException if file is not found or invalid
+     * @param string $file local filesystem path to a .ico file
+     *
+     * @throws InvalidArgumentException if the path uses a stream wrapper, or the file is not found or invalid
      */
     public function fromFile(string $file): Icon
     {
+        if (1 === preg_match('#^[a-z][a-z0-9+.\-]*://#i', $file)) {
+            throw new InvalidArgumentException('Stream wrappers are not allowed; pass a local file path or the binary data directly.');
+        }
+
         try {
             $data = @file_get_contents($file);
             if (false !== $data) {
