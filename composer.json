@@ -2,7 +2,7 @@
     "name": "konradmichalik/php-ico-file-loader",
     "description": "Powerful PHP package for reading and converting .ico files, perfect for handling website favicons",
     "license": "MIT",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "keywords": [
         "ico",
         "icon",
