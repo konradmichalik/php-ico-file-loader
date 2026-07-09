@@ -155,6 +155,95 @@ final class IcoParserTest extends IcoTestCase
         (new IcoParser())->parse(self::bombPng(100000, 100000));
     }
 
+    public function testTooShortDataIsNotSupported(): void
+    {
+        $parser = new IcoParser();
+
+        // fewer than 4 bytes (isPNG) and fewer than 6 bytes (ICONDIR header)
+        $this->assertFalse($parser->isSupportedBinaryString('ab'));
+    }
+
+    public function testTruncatedDirectoryEntriesStopParsing(): void
+    {
+        // header announces one entry, but not enough bytes for a full ICONDIRENTRY
+        $ico = pack('vvv', 0, 1, 1).'abcd';
+
+        $icon = (new IcoParser())->parse($ico);
+        $this->assertCount(0, $icon);
+    }
+
+    public function testBmpWithInsufficientHeaderDataThrows(): void
+    {
+        // valid directory entry, but fewer than 40 bytes of BMP header follow
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 4, 4, 0, 0, 1, 32, 10, 22);
+        $ico = $icoHeader.$dirEntry.str_repeat("\x00", 10);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('insufficient data for header');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testUnsupportedBitDepthLeavesBitmapDataEmpty(): void
+    {
+        // 16-bit BMP is not one of the handled depths, so no pixel data is extracted
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 16, 16, 1, 16, 0, 0, 0, 0, 0, 0);
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 16, 16, 0, 0, 1, 16, strlen($bmpInfoHeader), 22);
+        $ico = $icoHeader.$dirEntry.$bmpInfoHeader;
+
+        $icon = (new IcoParser())->parse($ico);
+        $this->assertCount(1, $icon);
+        $this->assertTrue($icon[0]->isBmp());
+        $this->assertSame('', $icon[0]->bmpData);
+    }
+
+    public function testPaletteBasedStandalonePngIsParsedAs8bit(): void
+    {
+        $gd = imagecreate(4, 4);
+        imagecolorallocate($gd, 255, 0, 0);
+        ob_start();
+        imagepng($gd);
+        $png = (string) ob_get_clean();
+
+        $icon = (new IcoParser())->parse($png);
+        $this->assertTrue($icon[0]->isPng());
+        $this->assertStringContainsString('8 bits/pixel', $icon[0]->getDescription());
+    }
+
+    public function testStandalonePngWithInvalidBodyThrows(): void
+    {
+        // valid PNG signature so it is treated as a standalone PNG, but the body is undecodable
+        $data = "\x89PNG\r\n\x1a\n".'garbage';
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid PNG data');
+
+        // imagecreatefromstring emits a native warning on malformed data before returning false
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            (new IcoParser())->parse($data);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function testEmbeddedPngWithInsufficientDataThrows(): void
+    {
+        // directory entry points at PNG data but declares more bytes than are present
+        $pngData = "\x89PNG\r\n\x1a\n";
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 16, 16, 0, 0, 1, 32, 1000, 22);
+        $ico = $icoHeader.$dirEntry.$pngData;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid PNG data: required');
+
+        (new IcoParser())->parse($ico);
+    }
+
     private static function bombPng(int $width, int $height): string
     {
         $ihdr = pack('NN', $width, $height)."\x08\x06\x00\x00\x00";

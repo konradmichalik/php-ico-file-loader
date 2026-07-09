@@ -47,4 +47,18 @@ final class IconTest extends IcoTestCase
         $icon = new Icon();
         $icon[] = 'foo'; // @phpstan-ignore-line offsetAssign.valueType
     }
+
+    public function testFindBestForSizePicksHighestBitDepthAtExactSize(): void
+    {
+        $icon = new Icon();
+        $icon[] = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 8]);
+        $icon[] = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
+        $icon[] = new IconImage(['width' => 32, 'height' => 32, 'bitCount' => 32]);
+
+        $best = $icon->findBestForSize(16, 16);
+        $this->assertNotNull($best);
+        $this->assertSame(32, $best->bitCount);
+
+        $this->assertNull($icon->findBestForSize(64, 64));
+    }
 }
