@@ -173,9 +173,11 @@ class GdRenderer implements RendererInterface
         }
 
         $gd = imagecreatetruecolor($width, $height);
+        // @codeCoverageIgnoreStart
         if (false === $gd) {
             throw new InvalidArgumentException('Failed to create GD image');
         }
+        // @codeCoverageIgnoreEnd
 
         return $gd;
     }
@@ -231,9 +233,11 @@ class GdRenderer implements RendererInterface
 
         // Unpack entire binary data once instead of ord() per pixel - much faster
         $bytes = unpack('C*', $img->bmpData);
+        // @codeCoverageIgnoreStart
         if (false === $bytes) {
             throw new InvalidArgumentException('Failed to unpack bitmap data');
         }
+        // @codeCoverageIgnoreEnd
 
         $offset = 1; // unpack is 1-indexed
         for ($i = $img->height - 1; $i >= 0; --$i) {
@@ -277,9 +281,11 @@ class GdRenderer implements RendererInterface
 
         // Unpack for better performance
         $bytes = unpack('C*', $img->bmpData);
+        // @codeCoverageIgnoreStart
         if (false === $bytes) {
             throw new InvalidArgumentException('Failed to unpack bitmap data');
         }
+        // @codeCoverageIgnoreEnd
 
         $offset = 1; // unpack is 1-indexed
         $maskpos = 0;
@@ -335,9 +341,11 @@ class GdRenderer implements RendererInterface
 
         // Unpack for better performance
         $bytes = unpack('C*', $img->bmpData);
+        // @codeCoverageIgnoreStart
         if (false === $bytes) {
             throw new InvalidArgumentException('Failed to unpack bitmap data');
         }
+        // @codeCoverageIgnoreEnd
 
         $offset = 0;
         $byteOffset = 1; // unpack is 1-indexed
@@ -358,10 +366,6 @@ class GdRenderer implements RendererInterface
      */
     private function buildPalette(IconImage $img, GdImage $gd): array
     {
-        if (24 === $img->bitCount) {
-            return [];
-        }
-
         $palette = [];
         for ($i = 0; $i < $img->colorCount; ++$i) {
             $red = $img->palette[$i]['red'];
@@ -386,9 +390,11 @@ class GdRenderer implements RendererInterface
 
         // Unpack for better performance
         $bytes = unpack('C*', $img->bmpData);
+        // @codeCoverageIgnoreStart
         if (false === $bytes) {
             throw new InvalidArgumentException('Failed to unpack bitmap data');
         }
+        // @codeCoverageIgnoreEnd
 
         $byteOffset = 1; // unpack is 1-indexed
         $maskoffset = 0;

@@ -127,4 +127,53 @@ final class GdRendererTest extends IcoTestCase
 
         (new GdRenderer())->render($image);
     }
+
+    public function testInvalidPngDataIsRejected(): void
+    {
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
+        $image->setPngFile('this is not a png');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid PNG data');
+
+        // imagecreatefromstring emits a native warning on malformed data before returning false
+        set_error_handler(static fn (): bool => true);
+
+        try {
+            (new GdRenderer())->render($image);
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    public function testUnsupportedBitDepthIsRejected(): void
+    {
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 16]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Unsupported bit depth: 16');
+
+        (new GdRenderer())->render($image);
+    }
+
+    public function testInvalidDimensionsAreRejected(): void
+    {
+        $image = new IconImage(['width' => 0, 'height' => 0, 'bitCount' => 32]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid image dimensions');
+
+        (new GdRenderer())->render($image);
+    }
+
+    public function testTruncated32bitBitmapDataIsRejected(): void
+    {
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
+        $image->setBitmapData("\x00\x00\x00\x00");
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Insufficient bitmap data');
+
+        (new GdRenderer())->render($image);
+    }
 }

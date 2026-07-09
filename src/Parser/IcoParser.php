@@ -62,9 +62,11 @@ class IcoParser implements ParserInterface
         }
 
         $icondir = unpack('SReserved/SType/SCount', $data);
+        // @codeCoverageIgnoreStart
         if (false === $icondir) {
             return null;
         }
+        // @codeCoverageIgnoreEnd
 
         if (self::ICO_RESERVED === $icondir['Reserved'] && self::ICO_TYPE_ICON === $icondir['Type']) {
             return $icondir;
@@ -80,9 +82,11 @@ class IcoParser implements ParserInterface
         }
 
         $signature = unpack('LFourCC', $data);
+        // @codeCoverageIgnoreStart
         if (false === $signature) {
             return false;
         }
+        // @codeCoverageIgnoreEnd
 
         return self::PNG_SIGNATURE === $signature['FourCC'];
     }
@@ -155,9 +159,11 @@ class IcoParser implements ParserInterface
                 'Cwidth/Cheight/CcolorCount/Creserved/Splanes/SbitCount/LsizeInBytes/LfileOffset',
                 $data,
             );
+            // @codeCoverageIgnoreStart
             if (false === $icoDirEntry) {
                 break;
             }
+            // @codeCoverageIgnoreEnd
 
             // Adjust file offset to be relative to image data (after all headers)
             $icoDirEntry['fileOffset'] -= ($count * self::ICO_DIR_ENTRY_SIZE) + self::ICO_HEADER_SIZE;
@@ -207,9 +213,11 @@ class IcoParser implements ParserInterface
             substr($data, $entry->fileOffset, self::BMP_INFO_HEADER_SIZE),
         );
 
+        // @codeCoverageIgnoreStart
         if (false === $bitmapInfoHeader) {
             throw new InvalidArgumentException('Failed to parse BMP header');
         }
+        // @codeCoverageIgnoreEnd
 
         $entry->setBitmapInfoHeader($bitmapInfoHeader);
 
@@ -245,9 +253,11 @@ class IcoParser implements ParserInterface
 
         $paletteBytes = unpack('C*', $paletteData);
 
+        // @codeCoverageIgnoreStart
         if (false === $paletteBytes) {
             throw new InvalidArgumentException('Failed to parse palette data');
         }
+        // @codeCoverageIgnoreEnd
 
         // Parse palette entries (BGRA format)
         for ($j = 0; $j < $entry->colorCount; ++$j) {

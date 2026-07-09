@@ -41,4 +41,12 @@ final class IconImageTest extends IcoTestCase
 
         new IconImage(['bogus' => 1]);
     }
+
+    public function testConstructorFlagsPngWhenPngDataProvided(): void
+    {
+        $image = new IconImage(['pngData' => 'not-empty']);
+
+        $this->assertTrue($image->isPng());
+        $this->assertFalse($image->isBmp());
+    }
 }
