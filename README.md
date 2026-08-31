@@ -1,5 +1,7 @@
 <div align="center">
 
+![icon](icon.png)
+
 # Php Ico File Loader
 
 [![Coverage](https://img.shields.io/coverallsCoverage/github/konradmichalik/php-ico-file-loader?logo=coveralls)](https://coveralls.io/github/konradmichalik/php-ico-file-loader)
