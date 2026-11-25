@@ -108,6 +108,13 @@ final class IcoFileServiceTest extends IcoTestCase
         $service->from('php://filter/read=convert.base64-encode/resource=/etc/passwd');
     }
 
+    public function testExtractIconRejectsInvalidSize(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new IcoFileService())->extractIcon('./tests/assets/32bit-16px-32px-sample.ico', 0, 0);
+    }
+
     public function testIterateExample(): void
     {
         $service = new IcoFileService();

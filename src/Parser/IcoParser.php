@@ -39,7 +39,8 @@ class IcoParser implements ParserInterface
     private const DEFAULT_DIMENSION = 256;
     private const MAX_ENTRIES = 256;
     private const MAX_BMP_DIMENSION = 65535;
-    private const MAX_PNG_PIXELS = 16777216; // 4096 x 4096
+
+    public function __construct(private readonly int $maxPngPixels = IconImage::DEFAULT_MAX_PNG_PIXELS) {}
 
     public function isSupportedBinaryString(string $data): bool
     {
@@ -138,8 +139,11 @@ class IcoParser implements ParserInterface
     private function parsePNGAsIco(string $data): Icon
     {
         $info = getimagesizefromstring($data);
-        if (false !== $info && ($info[0] * $info[1]) > self::MAX_PNG_PIXELS) {
-            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], self::MAX_PNG_PIXELS));
+        if (false === $info) {
+            throw new InvalidArgumentException('Invalid PNG data');
+        }
+        if (($info[0] * $info[1]) > $this->maxPngPixels) {
+            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], $this->maxPngPixels));
         }
 
         $png = imagecreatefromstring($data);

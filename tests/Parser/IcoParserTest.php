@@ -169,6 +169,34 @@ final class IcoParserTest extends IcoTestCase
         (new IcoParser())->parse(self::bombPng(100000, 100000));
     }
 
+    public function testPngAboveDefaultLimitIsRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size');
+
+        (new IcoParser())->parse(self::bombPng(2000, 2000));
+    }
+
+    public function testPngLimitIsConfigurable(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size of 10000 pixels');
+
+        (new IcoParser(10000))->parse(self::bombPng(101, 100));
+    }
+
+    public function testStandalonePngAtDefaultLimitIsAccepted(): void
+    {
+        $gd = imagecreatetruecolor(1024, 1024);
+        ob_start();
+        imagepng($gd);
+        $png = (string) ob_get_clean();
+
+        $icon = (new IcoParser())->parse($png);
+
+        $this->assertSame('1024x1024 pixel PNG @ 32 bits/pixel', $icon[0]->getDescription());
+    }
+
     public function testTooShortDataIsNotSupported(): void
     {
         $parser = new IcoParser();
@@ -340,12 +368,5 @@ final class IcoParserTest extends IcoTestCase
         $dirEntry = pack('CCCCvvVV', 8, 8, $dirColorCount, 0, 1, 4, strlen($imageData), 22);
 
         return pack('vvv', 0, 1, 1).$dirEntry.$imageData;
-    }
-
-    private static function bombPng(int $width, int $height): string
-    {
-        $ihdr = pack('NN', $width, $height)."\x08\x06\x00\x00\x00";
-
-        return "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$ihdr.pack('N', crc32('IHDR'.$ihdr));
     }
 }
