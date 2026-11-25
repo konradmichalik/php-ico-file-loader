@@ -89,6 +89,9 @@ class GdRenderer implements RendererInterface
     protected function resize(GdImage $gd, int $w, int $h): mixed
     {
         $resized = imagescale($gd, $w, $h);
+        if (false !== $resized) {
+            imagesavealpha($resized, true);
+        }
 
         return $resized;
     }
