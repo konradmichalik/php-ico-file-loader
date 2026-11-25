@@ -17,6 +17,7 @@ use GdImage;
 use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\Model\IconImage;
 
+use function count;
 use function intdiv;
 use function ord;
 use function sprintf;
@@ -314,10 +315,18 @@ class GdRenderer implements RendererInterface
             $y = $img->height - 1 - $row;
             for ($x = 0; $x < $img->width; ++$x) {
                 if (0 === $this->readBit($img->bmpData, $maskOffset + $row * $maskRowBytes, $x)) {
-                    imagesetpixel($gd, $x, $y, $palette[ord($img->bmpData[$row * $rowBytes + $x])]);
+                    imagesetpixel($gd, $x, $y, $this->paletteColor($palette, ord($img->bmpData[$row * $rowBytes + $x])));
                 }
             }
         }
+    }
+
+    /**
+     * @param array<int, int> $palette
+     */
+    private function paletteColor(array $palette, int $index): int
+    {
+        return $palette[$index] ?? throw new InvalidArgumentException(sprintf('Color index %d is outside the palette of %d colors', $index, count($palette)));
     }
 
     /**
@@ -353,7 +362,7 @@ class GdRenderer implements RendererInterface
                     $index = 0 === ($x & 1)
                         ? ($colorByte & self::HIGH_NIBBLE_MASK) >> self::NIBBLE_SHIFT
                         : $colorByte & self::LOW_NIBBLE_MASK;
-                    imagesetpixel($gd, $x, $y, $palette[$index]);
+                    imagesetpixel($gd, $x, $y, $this->paletteColor($palette, $index));
                 }
             }
         }
@@ -369,7 +378,7 @@ class GdRenderer implements RendererInterface
             $y = $img->height - 1 - $row;
             for ($x = 0; $x < $img->width; ++$x) {
                 if (0 === $this->readBit($img->bmpData, $maskOffset + $row * $maskRowBytes, $x)) {
-                    imagesetpixel($gd, $x, $y, $palette[$this->readBit($img->bmpData, $row * $rowBytes, $x)]);
+                    imagesetpixel($gd, $x, $y, $this->paletteColor($palette, $this->readBit($img->bmpData, $row * $rowBytes, $x)));
                 }
             }
         }

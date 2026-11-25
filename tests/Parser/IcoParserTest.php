@@ -131,6 +131,20 @@ final class IcoParserTest extends IcoTestCase
         $parser->parse($ico);
     }
 
+    public function testPaletteSizeFallsBackToBitDepthWhenHeaderAndDirectoryAreZero(): void
+    {
+        $icon = (new IcoParser())->parse(self::fourBitIco(0, 0, 16));
+
+        $this->assertCount(16, $icon[0]->palette);
+    }
+
+    public function testPaletteSizeComesFromHeaderNotDirectory(): void
+    {
+        $icon = (new IcoParser())->parse(self::fourBitIco(16, 2, 2));
+
+        $this->assertCount(2, $icon[0]->palette);
+    }
+
     public function testNegativeImageOffsetThrows(): void
     {
         // fileOffset 0 becomes negative once the header/dir-entry region is subtracted
@@ -317,6 +331,15 @@ final class IcoParserTest extends IcoTestCase
         $this->expectExceptionMessage('Invalid PNG data: required');
 
         (new IcoParser())->parse($ico);
+    }
+
+    private static function fourBitIco(int $dirColorCount, int $colorsUsed, int $paletteEntries): string
+    {
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 8, 16, 1, 4, 0, 0, 0, 0, $colorsUsed, 0);
+        $imageData = $bmpInfoHeader.str_repeat("\x00\x00\x00\x00", $paletteEntries).str_repeat("\x00", 64);
+        $dirEntry = pack('CCCCvvVV', 8, 8, $dirColorCount, 0, 1, 4, strlen($imageData), 22);
+
+        return pack('vvv', 0, 1, 1).$dirEntry.$imageData;
     }
 
     private static function bombPng(int $width, int $height): string
