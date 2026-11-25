@@ -108,6 +108,76 @@ final class IcoFileServiceTest extends IcoTestCase
         $service->from('php://filter/read=convert.base64-encode/resource=/etc/passwd');
     }
 
+    public function testFromRejectsBinaryDataWithNullBytes(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new IcoFileService())->from("GIF89a\x01\x00\x01\x00\x00\x00\x00;");
+    }
+
+    public function testFromRejectsOverlongPath(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new IcoFileService())->from(str_repeat('a', \PHP_MAXPATHLEN + 1));
+    }
+
+    public function testFromRejectsDataUri(): void
+    {
+        $data = base64_encode(file_get_contents('./tests/assets/32bit-16px-32px-sample.ico'));
+
+        $this->expectException(InvalidArgumentException::class);
+
+        (new IcoFileService())->from('data:application/octet-stream;base64,'.$data);
+    }
+
+    public function testFromUsesOneMessageForMissingFileAndUnknownData(): void
+    {
+        $service = new IcoFileService();
+        $messages = [];
+
+        foreach (['./tests/assets/does-not-exist.ico', 'not an icon'] as $input) {
+            try {
+                $service->from($input);
+            } catch (InvalidArgumentException $e) {
+                $messages[] = $e->getMessage();
+            }
+        }
+
+        $this->assertCount(2, $messages);
+        $this->assertSame($messages[0], $messages[1]);
+    }
+
+    public function testFromFileRejectsDirectory(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new IcoFileService())->fromFile('./tests/assets');
+    }
+
+    public function testFromFileRejectsOversizedFile(): void
+    {
+        $file = tempnam(sys_get_temp_dir(), 'ico');
+        file_put_contents($file, str_repeat("\x00", 10 * 1024 * 1024 + 1));
+
+        try {
+            $this->expectException(InvalidArgumentException::class);
+            $this->expectExceptionMessage('too large');
+
+            (new IcoFileService())->fromFile($file);
+        } finally {
+            unlink($file);
+        }
+    }
+
+    public function testFromFileMissingFileMessageIsNotDuplicated(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessageMatches('/^File could not be loaded\.$/');
+
+        (new IcoFileService())->fromFile('./tests/assets/does-not-exist.ico');
+    }
+
     public function testIterateExample(): void
     {
         $service = new IcoFileService();

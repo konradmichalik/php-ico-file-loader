@@ -33,6 +33,8 @@ $im = $loader->extractIcon('/path/to/icon.ico', 32, 32);
 imagepng($im, '/path/to/output.png');
 ```
 
+Pass untrusted bytes, such as a downloaded favicon, to `fromString()`. `from()` and `extractIcon()` fall back to treating unrecognised data as a local file path.
+
 ## 💛 Acknowledgements
 
 This project is a fork and further development of [`lordelph/icofileloader`](https://github.com/lordelph/icofileloader).
