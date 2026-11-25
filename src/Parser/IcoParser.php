@@ -245,13 +245,16 @@ class IcoParser implements ParserInterface
 
         match ($entry->bitCount) {
             32, 24 => $entry->setBitmapData(substr($entryData, $entry->bmpHeaderSize, $this->bitmapDataLength($entry))),
-            8, 4, 1 => $this->parsePaletteImageData($entry, $entryData),
+            8, 4, 1 => $this->parsePaletteImageData($entry, $entryData, $bitmapInfoHeader['ColorsUsed']),
             default => null,
         };
     }
 
-    private function parsePaletteImageData(IconImage $entry, string $entryData): void
+    private function parsePaletteImageData(IconImage $entry, string $entryData, int $colorsUsed): void
     {
+        // The directory entry may hold 0 or a wrong value, the BMP header is authoritative
+        $entry->colorCount = 0 === $colorsUsed ? 1 << $entry->bitCount : $colorsUsed;
+
         $paletteSize = $entry->colorCount * 4;
         $paletteOffset = $entry->bmpHeaderSize;
 

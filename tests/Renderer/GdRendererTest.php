@@ -88,6 +88,19 @@ final class GdRendererTest extends IcoTestCase
         (new GdRenderer())->render($image);
     }
 
+    public function testColorIndexOutsidePaletteIsRejected(): void
+    {
+        $image = new IconImage(['width' => 8, 'height' => 8, 'bitCount' => 4, 'colorCount' => 2]);
+        $image->addToBmpPalette(0, 0, 0, 255);
+        $image->addToBmpPalette(255, 255, 255, 255);
+        $image->setBitmapData(str_repeat("\x55", 32).str_repeat("\x00", 32));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('outside the palette');
+
+        (new GdRenderer())->render($image);
+    }
+
     public function testTruncated24bitBitmapDataIsRejected(): void
     {
         $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 24]);
