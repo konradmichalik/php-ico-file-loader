@@ -27,7 +27,7 @@ composer require konradmichalik/php-ico-file-loader
 ## ⚡ Usage
 
 ```php
-$loader = new KonradMichalik\PhpIcoFileLoeader\Parser\IcoFileService;
+$loader = new KonradMichalik\PhpIcoFileLoader\IcoFileService;
 $im = $loader->extractIcon('/path/to/icon.ico', 32, 32);
 
 imagepng($im, '/path/to/output.png');

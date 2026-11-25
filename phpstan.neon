@@ -8,8 +8,12 @@ parameters:
 		- '#Method .+Test::.+ has parameter .+ with no type specified#'
 		- '#Call to method PHPUnit\\Framework\\Assert::.+ will always evaluate to true#'
 		# Test files - file_get_contents can return false but tests use fixed paths
-		- '#Parameter .+ expects string, string\|false given#'
-		- '#Cannot access offset .+ on array\|false#'
+		-
+			message: '#Parameter .+ expects string, string\|false given#'
+			path: tests/
+		-
+			message: '#Cannot access offset .+ on array\|false#'
+			path: tests/
 		# Test files - intentional array access without null checks in tests
 		-
 			message: '#Cannot call method .+ on .+\|null#'

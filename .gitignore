@@ -9,3 +9,4 @@
 /site
 /tests/composer.lock
 /tests/vendor
+/tests/assets/*-OBSERVED.png

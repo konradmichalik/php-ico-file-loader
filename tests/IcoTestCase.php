@@ -18,6 +18,8 @@ use KonradMichalik\PhpIcoFileLoader\Model\Icon;
 use KonradMichalik\PhpIcoFileLoader\Parser\IcoParser;
 use PHPUnit\Framework\TestCase;
 
+use function sprintf;
+
 /**
  * IcoTestCase.
  *
@@ -42,8 +44,6 @@ abstract class IcoTestCase extends TestCase
      */
     protected function assertImageLooksLike(string $expected, GdImage $im): void
     {
-        $this->assertIsObject($im);
-
         $expectedFile = './tests/assets/'.$expected;
         // can regenerate expected results by deleting and re-running test
         if (!file_exists($expectedFile)) {
@@ -51,20 +51,32 @@ abstract class IcoTestCase extends TestCase
             $this->markTestSkipped('Regenerated $expected  - skipping test');
         }
 
-        // save icon as PNG with no compression
-        ob_start();
-        imagepng($im, null, 0);
-        $imageData = ob_get_contents();
-        ob_end_clean();
+        // pixels are compared instead of the encoded file, whose bytes depend on the libgd, libpng and zlib versions
+        $expectedIm = imagecreatefrompng($expectedFile);
+        $this->assertInstanceOf(GdImage::class, $expectedIm);
+        imagepalettetotruecolor($expectedIm);
+        imagepalettetotruecolor($im);
 
-        // it's possible this might break if the gd results change anything in their png encoding
-        // but that should be rare - the aim here to catch everyday problems in library maintenance
-        $expectedData = file_get_contents('./tests/assets/'.$expected);
-        if ($expectedData !== $imageData) {
-            $observedFile = str_replace('.png', '-OBSERVED.png', $expectedFile);
-            file_put_contents($observedFile, $imageData);
+        $this->assertSame(
+            [imagesx($expectedIm), imagesy($expectedIm)],
+            [imagesx($im), imagesy($im)],
+            'generated image size did not match expected '.$expected,
+        );
+
+        $differing = 0;
+        for ($y = 0; $y < imagesy($im); ++$y) {
+            for ($x = 0; $x < imagesx($im); ++$x) {
+                if (imagecolorat($im, $x, $y) !== imagecolorat($expectedIm, $x, $y)) {
+                    ++$differing;
+                }
+            }
         }
-        $this->assertSame($imageData, $expectedData, 'generated image did not match expected '.$expected);
+
+        if ($differing > 0) {
+            $observedFile = str_replace('.png', '-OBSERVED.png', $expectedFile);
+            imagepng($im, $observedFile, 0);
+        }
+        $this->assertSame(0, $differing, sprintf('%d pixels of the generated image did not match expected %s', $differing, $expected));
     }
 
     /**
