@@ -27,6 +27,16 @@ use PHPUnit\Framework\TestCase;
 abstract class IcoTestCase extends TestCase
 {
     /**
+     * A PNG that consists of the signature and an IHDR chunk only, enough for getimagesizefromstring().
+     */
+    protected static function bombPng(int $width, int $height): string
+    {
+        $ihdr = pack('NN', $width, $height)."\x08\x06\x00\x00\x00";
+
+        return "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$ihdr.pack('N', crc32('IHDR'.$ihdr));
+    }
+
+    /**
      * @param string  $expected leafname of asset file we expect image to look like
      * @param GdImage $im       generated image you want to check
      */

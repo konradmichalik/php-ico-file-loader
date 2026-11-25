@@ -42,7 +42,8 @@ class GdRenderer implements RendererInterface
     private const ALPHA_SHIFT = 24;
     private const RED_SHIFT = 16;
     private const GREEN_SHIFT = 8;
-    private const MAX_PNG_PIXELS = 16777216; // 4096 x 4096
+
+    public function __construct(private readonly int $maxPngPixels = IconImage::DEFAULT_MAX_PNG_PIXELS) {}
 
     /**
      * @param array<string, mixed>|null $opts
@@ -52,18 +53,22 @@ class GdRenderer implements RendererInterface
     public function render(IconImage $img, ?array $opts = null): mixed
     {
         $opts = $this->initOptions($img, $opts);
-
         if ($img->isPng()) {
             $gd = $this->renderPngImage($img, $opts['background']);
         } else {
             $gd = $this->renderBmpImage($img, $opts['background']);
         }
 
+        if ($opts['w'] < 1 || $opts['h'] < 1) {
+            throw new InvalidArgumentException(sprintf('Invalid target size: %dx%d', $opts['w'], $opts['h']));
+        }
+
         if ((imagesx($gd) !== $opts['w']) || (imagesy($gd) !== $opts['h'])) {
             $resized = $this->resize($gd, $opts['w'], $opts['h']);
-            if (false !== $resized) {
-                $gd = $resized;
+            if (false === $resized) {
+                throw new InvalidArgumentException(sprintf('Failed to resize image to %dx%d', $opts['w'], $opts['h']));
             }
+            $gd = $resized;
         }
 
         return $gd;
@@ -97,8 +102,11 @@ class GdRenderer implements RendererInterface
     protected function renderPngImage(IconImage $img, ?string $hexBackgroundColor): GdImage
     {
         $info = getimagesizefromstring($img->pngData);
-        if (false !== $info && ($info[0] * $info[1]) > self::MAX_PNG_PIXELS) {
-            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], self::MAX_PNG_PIXELS));
+        if (false === $info) {
+            throw new InvalidArgumentException('Invalid PNG data');
+        }
+        if (($info[0] * $info[1]) > $this->maxPngPixels) {
+            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], $this->maxPngPixels));
         }
 
         $im = imagecreatefromstring($img->pngData);

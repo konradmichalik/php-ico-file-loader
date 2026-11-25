@@ -25,6 +25,8 @@ use function sprintf;
  */
 class IconImage
 {
+    public const DEFAULT_MAX_PNG_PIXELS = 1048576; // 1024 x 1024, ICO allows 256 x 256 at most
+
     private const ALLOWED_PROPERTIES = [
         'width' => true, 'height' => true, 'colorCount' => true, 'reserved' => true,
         'planes' => true, 'bitCount' => true, 'sizeInBytes' => true, 'fileOffset' => true,
