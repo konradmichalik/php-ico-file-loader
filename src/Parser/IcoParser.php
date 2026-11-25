@@ -17,6 +17,7 @@ use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\Model\{Icon, IconImage};
 
 use function count;
+use function intdiv;
 use function sprintf;
 use function strlen;
 
@@ -36,6 +37,8 @@ class IcoParser implements ParserInterface
     private const ICO_RESERVED = 0;
     private const DEFAULT_COLOR_COUNT = 256;
     private const DEFAULT_DIMENSION = 256;
+    private const MAX_ENTRIES = 256;
+    private const MAX_BMP_DIMENSION = 65535;
     private const MAX_PNG_PIXELS = 16777216; // 4096 x 4096
 
     public function isSupportedBinaryString(string $data): bool
@@ -61,7 +64,7 @@ class IcoParser implements ParserInterface
             return null;
         }
 
-        $icondir = unpack('SReserved/SType/SCount', $data);
+        $icondir = unpack('vReserved/vType/vCount', $data);
         // @codeCoverageIgnoreStart
         if (false === $icondir) {
             return null;
@@ -81,7 +84,7 @@ class IcoParser implements ParserInterface
             return false;
         }
 
-        $signature = unpack('LFourCC', $data);
+        $signature = unpack('VFourCC', $data);
         // @codeCoverageIgnoreStart
         if (false === $signature) {
             return false;
@@ -98,14 +101,28 @@ class IcoParser implements ParserInterface
             throw new InvalidArgumentException('Invalid ICO file format');
         }
 
-        $data = substr($data, self::ICO_HEADER_SIZE);
+        $count = $icondir['Count'];
+        $directoryEnd = self::ICO_HEADER_SIZE + $count * self::ICO_DIR_ENTRY_SIZE;
+        if ($count > self::MAX_ENTRIES || $directoryEnd > strlen($data)) {
+            throw new InvalidArgumentException(sprintf('Invalid icon directory: %d entries do not fit into %d bytes (maximum %d entries)', $count, strlen($data), self::MAX_ENTRIES));
+        }
 
         $icon = new Icon();
-        $data = $this->parseIconDirEntries($icon, $data, $icondir['Count']);
+        $this->parseIconDirEntries($icon, $data, $count);
 
+        $declaredBytes = 0;
         foreach ($icon as $iconImage) {
-            if ($iconImage->fileOffset < 0) {
+            if ($iconImage->fileOffset < $directoryEnd) {
                 throw new InvalidArgumentException('Invalid image offset in icon directory entry');
+            }
+
+            // Entries of a valid icon do not overlap, so overlapping ones would only multiply memory use.
+            // Entries that exceed the file are rejected with a specific message when they are parsed.
+            if ($iconImage->fileOffset + $iconImage->sizeInBytes <= strlen($data)) {
+                $declaredBytes += $iconImage->sizeInBytes;
+            }
+            if ($declaredBytes > strlen($data)) {
+                throw new InvalidArgumentException('Invalid icon directory: entries declare more data than the file contains');
             }
 
             if ($this->isPNG(substr($data, $iconImage->fileOffset, 4))) {
@@ -148,25 +165,19 @@ class IcoParser implements ParserInterface
         return $icon;
     }
 
-    private function parseIconDirEntries(Icon $icon, string $data, int $count): string
+    private function parseIconDirEntries(Icon $icon, string $data, int $count): void
     {
         for ($i = 0; $i < $count; ++$i) {
-            if (strlen($data) < self::ICO_DIR_ENTRY_SIZE) {
-                break;
-            }
-
             $icoDirEntry = unpack(
-                'Cwidth/Cheight/CcolorCount/Creserved/Splanes/SbitCount/LsizeInBytes/LfileOffset',
+                'Cwidth/Cheight/CcolorCount/Creserved/vplanes/vbitCount/VsizeInBytes/VfileOffset',
                 $data,
+                self::ICO_HEADER_SIZE + $i * self::ICO_DIR_ENTRY_SIZE,
             );
             // @codeCoverageIgnoreStart
             if (false === $icoDirEntry) {
                 break;
             }
             // @codeCoverageIgnoreEnd
-
-            // Adjust file offset to be relative to image data (after all headers)
-            $icoDirEntry['fileOffset'] -= ($count * self::ICO_DIR_ENTRY_SIZE) + self::ICO_HEADER_SIZE;
 
             // ICO format uses 0 to represent 256 for dimensions and color count
             if (0 === $icoDirEntry['colorCount']) {
@@ -179,13 +190,8 @@ class IcoParser implements ParserInterface
                 $icoDirEntry['height'] = self::DEFAULT_DIMENSION;
             }
 
-            $entry = new IconImage($icoDirEntry);
-            $icon[] = $entry;
-
-            $data = substr($data, self::ICO_DIR_ENTRY_SIZE);
+            $icon[] = new IconImage($icoDirEntry);
         }
-
-        return $data;
     }
 
     private function parsePng(IconImage $entry, string $data): void
@@ -203,14 +209,23 @@ class IcoParser implements ParserInterface
 
     private function parseBmp(IconImage $entry, string $data): void
     {
-        if (strlen($data) < $entry->fileOffset + self::BMP_INFO_HEADER_SIZE) {
+        $dataLength = strlen($data);
+        $requiredLength = $entry->fileOffset + $entry->sizeInBytes;
+
+        if ($requiredLength > $dataLength) {
+            throw new InvalidArgumentException(sprintf('Invalid BMP data: required %d bytes, but only %d available', $requiredLength, $dataLength));
+        }
+
+        $entryData = substr($data, $entry->fileOffset, $entry->sizeInBytes);
+
+        if (strlen($entryData) < self::BMP_INFO_HEADER_SIZE) {
             throw new InvalidArgumentException('Invalid BMP data: insufficient data for header');
         }
 
         $bitmapInfoHeader = unpack(
-            'LSize/LWidth/LHeight/SPlanes/SBitCount/LCompression/LImageSize/'.
-            'LXpixelsPerM/LYpixelsPerM/LColorsUsed/LColorsImportant',
-            substr($data, $entry->fileOffset, self::BMP_INFO_HEADER_SIZE),
+            'VSize/VWidth/VHeight/vPlanes/vBitCount/VCompression/VImageSize/'.
+            'VXpixelsPerM/VYpixelsPerM/VColorsUsed/VColorsImportant',
+            $entryData,
         );
 
         // @codeCoverageIgnoreStart
@@ -221,31 +236,26 @@ class IcoParser implements ParserInterface
 
         $entry->setBitmapInfoHeader($bitmapInfoHeader);
 
+        if ($entry->bmpHeaderSize < self::BMP_INFO_HEADER_SIZE || $entry->bmpHeaderSize > strlen($entryData)) {
+            throw new InvalidArgumentException(sprintf('Invalid BMP data: header size %d', $entry->bmpHeaderSize));
+        }
+        if ($entry->bmpHeaderWidth > self::MAX_BMP_DIMENSION || $entry->bmpHeaderHeight > self::MAX_BMP_DIMENSION) {
+            throw new InvalidArgumentException(sprintf('Invalid BMP data: dimensions %dx%d', $entry->bmpHeaderWidth, $entry->bmpHeaderHeight));
+        }
+
         match ($entry->bitCount) {
-            32, 24 => $this->parseTrueColorImageData($entry, $data),
-            8, 4, 1 => $this->parsePaletteImageData($entry, $data),
+            32, 24 => $entry->setBitmapData(substr($entryData, $entry->bmpHeaderSize, $this->bitmapDataLength($entry))),
+            8, 4, 1 => $this->parsePaletteImageData($entry, $entryData),
             default => null,
         };
     }
 
-    private function parseTrueColorImageData(IconImage $entry, string $data): void
-    {
-        $length = $entry->bmpHeaderWidth * $entry->bmpHeaderHeight * ($entry->bitCount / 8);
-        $offset = $entry->fileOffset + $entry->bmpHeaderSize;
-
-        // Note: ICO files include mask bits after the color data, so we don't validate total size here
-        // The mask data will be part of the remaining data in the buffer
-        $bmpData = substr($data, $offset, (int) $length);
-        $entry->setBitmapData($bmpData);
-    }
-
-    private function parsePaletteImageData(IconImage $entry, string $data): void
+    private function parsePaletteImageData(IconImage $entry, string $entryData): void
     {
         $paletteSize = $entry->colorCount * 4;
-        $paletteOffset = $entry->fileOffset + $entry->bmpHeaderSize;
+        $paletteOffset = $entry->bmpHeaderSize;
 
-        // Extract and parse palette data efficiently using unpack
-        $paletteData = substr($data, $paletteOffset, $paletteSize);
+        $paletteData = substr($entryData, $paletteOffset, $paletteSize);
 
         if (strlen($paletteData) < $paletteSize) {
             throw new InvalidArgumentException(sprintf('Invalid palette data: required %d bytes, but only %d available', $paletteSize, strlen($paletteData)));
@@ -270,12 +280,17 @@ class IcoParser implements ParserInterface
             );
         }
 
-        // Parse bitmap data
-        // Note: ICO files include mask bits after the color data, which is included in this calculation
-        $length = $entry->bmpHeaderWidth * $entry->bmpHeaderHeight * (1 + $entry->bitCount) / $entry->bitCount;
-        $bmpDataOffset = $paletteOffset + $paletteSize;
+        $entry->setBitmapData(substr($entryData, $paletteOffset + $paletteSize, $this->bitmapDataLength($entry)));
+    }
 
-        $bmpData = substr($data, $bmpDataOffset, (int) $length);
-        $entry->setBitmapData($bmpData);
+    /**
+     * Pixel data followed by the AND mask. Rows are padded to 4 bytes, the header height covers both parts.
+     */
+    private function bitmapDataLength(IconImage $entry): int
+    {
+        $rowBytes = intdiv($entry->bmpHeaderWidth * $entry->bitCount + 31, 32) * 4;
+        $maskRowBytes = intdiv($entry->bmpHeaderWidth + 31, 32) * 4;
+
+        return intdiv($entry->bmpHeaderHeight, 2) * ($rowBytes + $maskRowBytes);
     }
 }
