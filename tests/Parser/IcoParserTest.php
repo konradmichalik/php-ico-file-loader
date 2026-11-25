@@ -163,13 +163,88 @@ final class IcoParserTest extends IcoTestCase
         $this->assertFalse($parser->isSupportedBinaryString('ab'));
     }
 
-    public function testTruncatedDirectoryEntriesStopParsing(): void
+    public function testDirectoryLargerThanFileThrows(): void
     {
         // header announces one entry, but not enough bytes for a full ICONDIRENTRY
         $ico = pack('vvv', 0, 1, 1).'abcd';
 
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid icon directory');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testTooManyDirectoryEntriesThrow(): void
+    {
+        $count = 257;
+        $ico = pack('vvv', 0, 1, $count).str_repeat(pack('CCCCvvVV', 1, 1, 0, 0, 1, 32, 0, 0), $count);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid icon directory');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testBmpEntryExceedingFileThrows(): void
+    {
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 4, 8, 1, 32, 0, 0, 0, 0, 0, 0);
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 4, 4, 0, 0, 1, 32, strlen($bmpInfoHeader) + 1000, 22);
+        $ico = $icoHeader.$dirEntry.$bmpInfoHeader;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid BMP data: required');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testEntriesSharingOnePayloadThrow(): void
+    {
+        $count = 3;
+        $bmp = pack('VVVvvVVVVVV', 40, 256, 512, 1, 32, 0, 0, 0, 0, 0, 0).str_repeat("\x00", 4096);
+        $entry = pack('CCCCvvVV', 0, 0, 0, 0, 1, 32, strlen($bmp), 6 + $count * 16);
+        $ico = pack('vvv', 0, 1, $count).str_repeat($entry, $count).$bmp;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('declare more data than the file contains');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testInvalidBmpHeaderSizeThrows(): void
+    {
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 0, 2, 4, 1, 32, 0, 0, 0, 0, 0, 0);
+        $entryData = $bmpInfoHeader.str_repeat("\x00", 24);
+        $ico = pack('vvv', 0, 1, 1).pack('CCCCvvVV', 2, 2, 0, 0, 1, 32, strlen($entryData), 22).$entryData;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid BMP data: header size');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testBmpDataIsLimitedToEntrySize(): void
+    {
+        // 2x2 32-bit BMP: 40 byte header + 16 byte pixels + 8 byte mask, followed by the next image
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 2, 4, 1, 32, 0, 0, 0, 0, 0, 0);
+        $entryData = $bmpInfoHeader.str_repeat("\x11", 16).str_repeat("\x00", 8);
+        $ico = pack('vvv', 0, 1, 1).pack('CCCCvvVV', 2, 2, 0, 0, 1, 32, strlen($entryData), 22).$entryData.str_repeat("\xFF", 64);
+
         $icon = (new IcoParser())->parse($ico);
-        $this->assertCount(0, $icon);
+
+        $this->assertSame(24, strlen($icon[0]->bmpData));
+    }
+
+    public function testBmpDataIsLimitedToDimensions(): void
+    {
+        // 1x1 image whose entry carries a large trailing payload
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 1, 2, 1, 32, 0, 0, 0, 0, 0, 0);
+        $entryData = $bmpInfoHeader.str_repeat("\x00", 8).str_repeat("\xFF", 100000);
+        $ico = pack('vvv', 0, 1, 1).pack('CCCCvvVV', 1, 1, 0, 0, 1, 32, strlen($entryData), 22).$entryData;
+
+        $icon = (new IcoParser())->parse($ico);
+
+        $this->assertSame(8, strlen($icon[0]->bmpData));
     }
 
     public function testBmpWithInsufficientHeaderDataThrows(): void
