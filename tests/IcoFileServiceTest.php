@@ -14,6 +14,7 @@ declare(strict_types=1);
 namespace KonradMichalik\PhpIcoFileLoader\Tests;
 
 use DomainException;
+use GdImage;
 use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\IcoFileService;
 
@@ -32,6 +33,19 @@ final class IcoFileServiceTest extends IcoTestCase
         $service = new IcoFileService();
         $im = $service->extractIcon('./tests/assets/32bit-16px-32px-sample.ico', 64, 64);
         $this->assertImageLooksLike('32bit-64px-resize-expected.png', $im);
+    }
+
+    public function testResizedImageKeepsTransparencyWhenSaved(): void
+    {
+        $service = new IcoFileService();
+        $im = $service->extractIcon('./tests/assets/32bit-16px-32px-sample.ico', 64, 64);
+
+        ob_start();
+        imagepng($im);
+        $reloaded = imagecreatefromstring((string) ob_get_clean());
+
+        $this->assertInstanceOf(GdImage::class, $reloaded);
+        $this->assertSame(127, (imagecolorat($reloaded, 0, 0) >> 24) & 0x7F, 'transparent corner became opaque');
     }
 
     public function testExtractEmpty(): void
@@ -176,6 +190,13 @@ final class IcoFileServiceTest extends IcoTestCase
         $this->expectExceptionMessageMatches('/^File could not be loaded\.$/');
 
         (new IcoFileService())->fromFile('./tests/assets/does-not-exist.ico');
+    }
+
+    public function testExtractIconRejectsInvalidSize(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new IcoFileService())->extractIcon('./tests/assets/32bit-16px-32px-sample.ico', 0, 0);
     }
 
     public function testIterateExample(): void

@@ -17,6 +17,8 @@ use GdImage;
 use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\Model\IconImage;
 
+use function count;
+use function intdiv;
 use function ord;
 use function sprintf;
 use function strlen;
@@ -33,15 +35,15 @@ class GdRenderer implements RendererInterface
     private const TRANSPARENT_WHITE_GREEN = 255;
     private const TRANSPARENT_WHITE_BLUE = 255;
     private const TRANSPARENT_ALPHA = 127;
-    private const MASK_ROW_ALIGNMENT = 32;
-    private const BITS_PER_BYTE = 8;
+    private const ROW_ALIGNMENT = 32;
     private const LOW_NIBBLE_MASK = 0x0F;
     private const HIGH_NIBBLE_MASK = 0xF0;
     private const NIBBLE_SHIFT = 4;
     private const ALPHA_SHIFT = 24;
     private const RED_SHIFT = 16;
     private const GREEN_SHIFT = 8;
-    private const MAX_PNG_PIXELS = 16777216; // 4096 x 4096
+
+    public function __construct(private readonly int $maxPngPixels = IconImage::DEFAULT_MAX_PNG_PIXELS) {}
 
     /**
      * @param array<string, mixed>|null $opts
@@ -51,18 +53,22 @@ class GdRenderer implements RendererInterface
     public function render(IconImage $img, ?array $opts = null): mixed
     {
         $opts = $this->initOptions($img, $opts);
-
         if ($img->isPng()) {
             $gd = $this->renderPngImage($img, $opts['background']);
         } else {
             $gd = $this->renderBmpImage($img, $opts['background']);
         }
 
+        if ($opts['w'] < 1 || $opts['h'] < 1) {
+            throw new InvalidArgumentException(sprintf('Invalid target size: %dx%d', $opts['w'], $opts['h']));
+        }
+
         if ((imagesx($gd) !== $opts['w']) || (imagesy($gd) !== $opts['h'])) {
             $resized = $this->resize($gd, $opts['w'], $opts['h']);
-            if (false !== $resized) {
-                $gd = $resized;
+            if (false === $resized) {
+                throw new InvalidArgumentException(sprintf('Failed to resize image to %dx%d', $opts['w'], $opts['h']));
             }
+            $gd = $resized;
         }
 
         return $gd;
@@ -89,6 +95,9 @@ class GdRenderer implements RendererInterface
     protected function resize(GdImage $gd, int $w, int $h): mixed
     {
         $resized = imagescale($gd, $w, $h);
+        if (false !== $resized) {
+            imagesavealpha($resized, true);
+        }
 
         return $resized;
     }
@@ -96,8 +105,11 @@ class GdRenderer implements RendererInterface
     protected function renderPngImage(IconImage $img, ?string $hexBackgroundColor): GdImage
     {
         $info = getimagesizefromstring($img->pngData);
-        if (false !== $info && ($info[0] * $info[1]) > self::MAX_PNG_PIXELS) {
-            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], self::MAX_PNG_PIXELS));
+        if (false === $info) {
+            throw new InvalidArgumentException('Invalid PNG data');
+        }
+        if (($info[0] * $info[1]) > $this->maxPngPixels) {
+            throw new InvalidArgumentException(sprintf('PNG dimensions %dx%d exceed the maximum allowed size of %d pixels', $info[0], $info[1], $this->maxPngPixels));
         }
 
         $im = imagecreatefromstring($img->pngData);
@@ -256,109 +268,76 @@ class GdRenderer implements RendererInterface
         }
     }
 
-    private function assertSufficientBitmapData(IconImage $img): void
+    /**
+     * BMP rows are padded to 4 bytes, for the pixel data and for the AND mask that follows it.
+     *
+     * @return array{int, int, int} bytes per pixel row, bytes per mask row, offset of the mask
+     */
+    private function bitmapLayout(IconImage $img): array
     {
-        $maskWidth = $img->width;
-        if (($maskWidth % self::MASK_ROW_ALIGNMENT) > 0) {
-            $maskWidth += self::MASK_ROW_ALIGNMENT - ($img->width % self::MASK_ROW_ALIGNMENT);
-        }
+        $rowBytes = intdiv($img->width * $img->bitCount + self::ROW_ALIGNMENT - 1, self::ROW_ALIGNMENT) * 4;
+        $maskRowBytes = intdiv($img->width + self::ROW_ALIGNMENT - 1, self::ROW_ALIGNMENT) * 4;
+        $maskOffset = $rowBytes * $img->height;
 
-        $required = (int) ($img->width * $img->height * $img->bitCount / self::BITS_PER_BYTE)
-            + (int) ($maskWidth * $img->height / self::BITS_PER_BYTE);
+        $required = $maskOffset + $maskRowBytes * $img->height;
         $actual = strlen($img->bmpData);
-
         if ($actual < $required) {
             throw new InvalidArgumentException(sprintf('Insufficient bitmap data: need %d bytes, got %d', $required, $actual));
         }
+
+        return [$rowBytes, $maskRowBytes, $maskOffset];
+    }
+
+    /**
+     * Bit $x of the row starting at $rowOffset, most significant bit first.
+     */
+    private function readBit(string $data, int $rowOffset, int $x): int
+    {
+        return (ord($data[$rowOffset + ($x >> 3)]) >> (7 - ($x & 7))) & 1;
     }
 
     private function render24bit(IconImage $img, GdImage $gd): void
     {
         // 24 bits: 3 bytes per pixel [ B | G | R ].
-        $this->assertSufficientBitmapData($img);
+        [$rowBytes, $maskRowBytes, $maskOffset] = $this->bitmapLayout($img);
 
-        $maskBits = $this->buildMaskBits($img);
-
-        // Unpack for better performance
-        $bytes = unpack('C*', $img->bmpData);
-        // @codeCoverageIgnoreStart
-        if (false === $bytes) {
-            throw new InvalidArgumentException('Failed to unpack bitmap data');
-        }
-        // @codeCoverageIgnoreEnd
-
-        $offset = 1; // unpack is 1-indexed
-        $maskpos = 0;
-
-        for ($i = $img->height - 1; $i >= 0; --$i) {
-            for ($j = 0; $j < $img->width; ++$j) {
-                if ('0' === $maskBits[$maskpos]) {
+        for ($row = 0; $row < $img->height; ++$row) {
+            $y = $img->height - 1 - $row;
+            for ($x = 0; $x < $img->width; ++$x) {
+                if (0 === $this->readBit($img->bmpData, $maskOffset + $row * $maskRowBytes, $x)) {
+                    $offset = $row * $rowBytes + $x * 3;
                     // Translate BGR to RGB
-                    $col = ($bytes[$offset + 2] << self::RED_SHIFT) |
-                        ($bytes[$offset + 1] << self::GREEN_SHIFT) |
-                        $bytes[$offset];
-                    imagesetpixel($gd, $j, $i, $col);
+                    $col = (ord($img->bmpData[$offset + 2]) << self::RED_SHIFT) |
+                        (ord($img->bmpData[$offset + 1]) << self::GREEN_SHIFT) |
+                        ord($img->bmpData[$offset]);
+                    imagesetpixel($gd, $x, $y, $col);
                 }
-                $offset += 3;
-                ++$maskpos;
             }
         }
-    }
-
-    private function buildMaskBits(IconImage $img): string
-    {
-        $width = $img->width;
-        if (($width % self::MASK_ROW_ALIGNMENT) > 0) {
-            $width += (self::MASK_ROW_ALIGNMENT - ($img->width % self::MASK_ROW_ALIGNMENT));
-        }
-
-        $offset = (int) ($img->width * $img->height * $img->bitCount / self::BITS_PER_BYTE);
-        $totalBytes = (int) ($width * $img->height / self::BITS_PER_BYTE);
-        $maskBits = '';
-        $bytes = 0;
-        $bytesPerLine = $img->width / self::BITS_PER_BYTE;
-        $bytesToRemove = ($width - $img->width) / self::BITS_PER_BYTE;
-
-        for ($i = 0; $i < $totalBytes; ++$i) {
-            $maskBits .= str_pad(decbin(ord($img->bmpData[$offset + $i])), 8, '0', \STR_PAD_LEFT);
-            ++$bytes;
-            if ($bytes === $bytesPerLine) {
-                $i += (int) $bytesToRemove;
-                $bytes = 0;
-            }
-        }
-
-        return $maskBits;
     }
 
     private function render8bit(IconImage $img, GdImage $gd): void
     {
         // 8 bits: 1 byte per pixel [ COLOR INDEX ].
-        $this->assertSufficientBitmapData($img);
-
+        [$rowBytes, $maskRowBytes, $maskOffset] = $this->bitmapLayout($img);
         $palette = $this->buildPalette($img, $gd);
-        $maskBits = $this->buildMaskBits($img);
 
-        // Unpack for better performance
-        $bytes = unpack('C*', $img->bmpData);
-        // @codeCoverageIgnoreStart
-        if (false === $bytes) {
-            throw new InvalidArgumentException('Failed to unpack bitmap data');
-        }
-        // @codeCoverageIgnoreEnd
-
-        $offset = 0;
-        $byteOffset = 1; // unpack is 1-indexed
-        for ($i = $img->height - 1; $i >= 0; --$i) {
-            for ($j = 0; $j < $img->width; ++$j) {
-                if ('0' === $maskBits[$offset]) {
-                    $color = $bytes[$byteOffset];
-                    imagesetpixel($gd, $j, $i, $palette[$color]);
+        for ($row = 0; $row < $img->height; ++$row) {
+            $y = $img->height - 1 - $row;
+            for ($x = 0; $x < $img->width; ++$x) {
+                if (0 === $this->readBit($img->bmpData, $maskOffset + $row * $maskRowBytes, $x)) {
+                    imagesetpixel($gd, $x, $y, $this->paletteColor($palette, ord($img->bmpData[$row * $rowBytes + $x])));
                 }
-                ++$offset;
-                ++$byteOffset;
             }
         }
+    }
+
+    /**
+     * @param array<int, int> $palette
+     */
+    private function paletteColor(array $palette, int $index): int
+    {
+        return $palette[$index] ?? throw new InvalidArgumentException(sprintf('Color index %d is outside the palette of %d colors', $index, count($palette)));
     }
 
     /**
@@ -382,36 +361,20 @@ class GdRenderer implements RendererInterface
 
     private function render4bit(IconImage $img, GdImage $gd): void
     {
-        // 4 bits: half byte/nibble per pixel [ COLOR INDEX ].
-        $this->assertSufficientBitmapData($img);
-
+        // 4 bits: half byte/nibble per pixel [ COLOR INDEX ], high nibble first.
+        [$rowBytes, $maskRowBytes, $maskOffset] = $this->bitmapLayout($img);
         $palette = $this->buildPalette($img, $gd);
-        $maskBits = $this->buildMaskBits($img);
 
-        // Unpack for better performance
-        $bytes = unpack('C*', $img->bmpData);
-        // @codeCoverageIgnoreStart
-        if (false === $bytes) {
-            throw new InvalidArgumentException('Failed to unpack bitmap data');
-        }
-        // @codeCoverageIgnoreEnd
-
-        $byteOffset = 1; // unpack is 1-indexed
-        $maskoffset = 0;
-        for ($i = $img->height - 1; $i >= 0; --$i) {
-            for ($j = 0; $j < $img->width; $j += 2) {
-                $colorByte = $bytes[$byteOffset];
-                $lowNibble = $colorByte & self::LOW_NIBBLE_MASK;
-                $highNibble = ($colorByte & self::HIGH_NIBBLE_MASK) >> self::NIBBLE_SHIFT;
-
-                if ('0' === $maskBits[$maskoffset++]) {
-                    imagesetpixel($gd, $j, $i, $palette[$highNibble]);
+        for ($row = 0; $row < $img->height; ++$row) {
+            $y = $img->height - 1 - $row;
+            for ($x = 0; $x < $img->width; ++$x) {
+                if (0 === $this->readBit($img->bmpData, $maskOffset + $row * $maskRowBytes, $x)) {
+                    $colorByte = ord($img->bmpData[$row * $rowBytes + ($x >> 1)]);
+                    $index = 0 === ($x & 1)
+                        ? ($colorByte & self::HIGH_NIBBLE_MASK) >> self::NIBBLE_SHIFT
+                        : $colorByte & self::LOW_NIBBLE_MASK;
+                    imagesetpixel($gd, $x, $y, $this->paletteColor($palette, $index));
                 }
-
-                if ('0' === $maskBits[$maskoffset++]) {
-                    imagesetpixel($gd, $j + 1, $i, $palette[$lowNibble]);
-                }
-                ++$byteOffset;
             }
         }
     }
@@ -419,24 +382,15 @@ class GdRenderer implements RendererInterface
     private function render1bit(IconImage $img, GdImage $gd): void
     {
         // 1 bit: 1 bit per pixel (2 colors, usually black&white) [ COLOR INDEX ].
-        $this->assertSufficientBitmapData($img);
-
+        [$rowBytes, $maskRowBytes, $maskOffset] = $this->bitmapLayout($img);
         $palette = $this->buildPalette($img, $gd);
-        $maskBits = $this->buildMaskBits($img);
 
-        $colorbits = '';
-        $total = strlen($img->bmpData);
-        for ($i = 0; $i < $total; ++$i) {
-            $colorbits .= str_pad(decbin(ord($img->bmpData[$i])), 8, '0', \STR_PAD_LEFT);
-        }
-
-        $offset = 0;
-        for ($i = $img->height - 1; $i >= 0; --$i) {
-            for ($j = 0; $j < $img->width; ++$j) {
-                if ('0' === $maskBits[$offset]) {
-                    imagesetpixel($gd, $j, $i, $palette[(int) $colorbits[$offset]]);
+        for ($row = 0; $row < $img->height; ++$row) {
+            $y = $img->height - 1 - $row;
+            for ($x = 0; $x < $img->width; ++$x) {
+                if (0 === $this->readBit($img->bmpData, $maskOffset + $row * $maskRowBytes, $x)) {
+                    imagesetpixel($gd, $x, $y, $this->paletteColor($palette, $this->readBit($img->bmpData, $row * $rowBytes, $x)));
                 }
-                ++$offset;
             }
         }
     }

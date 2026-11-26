@@ -13,6 +13,7 @@ declare(strict_types=1);
 
 namespace KonradMichalik\PhpIcoFileLoader\Tests\Renderer;
 
+use GdImage;
 use InvalidArgumentException;
 use Iterator;
 use KonradMichalik\PhpIcoFileLoader\Model\IconImage;
@@ -88,6 +89,19 @@ final class GdRendererTest extends IcoTestCase
         (new GdRenderer())->render($image);
     }
 
+    public function testColorIndexOutsidePaletteIsRejected(): void
+    {
+        $image = new IconImage(['width' => 8, 'height' => 8, 'bitCount' => 4, 'colorCount' => 2]);
+        $image->addToBmpPalette(0, 0, 0, 255);
+        $image->addToBmpPalette(255, 255, 255, 255);
+        $image->setBitmapData(str_repeat("\x55", 32).str_repeat("\x00", 32));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('outside the palette');
+
+        (new GdRenderer())->render($image);
+    }
+
     public function testTruncated24bitBitmapDataIsRejected(): void
     {
         $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 24]);
@@ -116,8 +130,7 @@ final class GdRendererTest extends IcoTestCase
 
     public function testOversizedPngIsRejected(): void
     {
-        $ihdr = pack('NN', 100000, 100000)."\x08\x06\x00\x00\x00";
-        $bombPng = "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$ihdr.pack('N', crc32('IHDR'.$ihdr));
+        $bombPng = self::bombPng(100000, 100000);
 
         $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
         $image->setPngFile($bombPng);
@@ -126,6 +139,67 @@ final class GdRendererTest extends IcoTestCase
         $this->expectExceptionMessage('exceed the maximum allowed size');
 
         (new GdRenderer())->render($image);
+    }
+
+    public function testPngAboveDefaultLimitIsRejected(): void
+    {
+        $bombPng = self::bombPng(2000, 2000);
+
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
+        $image->setPngFile($bombPng);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size');
+
+        (new GdRenderer())->render($image);
+    }
+
+    public function testPngLimitIsConfigurable(): void
+    {
+        $bombPng = self::bombPng(101, 100);
+
+        $image = new IconImage(['width' => 16, 'height' => 16, 'bitCount' => 32]);
+        $image->setPngFile($bombPng);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size of 10000 pixels');
+
+        (new GdRenderer(10000))->render($image);
+    }
+
+    public static function invalidSizeProvider(): Iterator
+    {
+        yield 'zero' => [0, 0];
+        yield 'negative' => [-5, -5];
+        yield 'zero width' => [0, 32];
+        yield 'zero height' => [32, 0];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('invalidSizeProvider')]
+    public function testInvalidTargetSizeIsRejected(int $w, int $h): void
+    {
+        $icon = $this->parseIcon('24bit-32px-sample.ico');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid target size');
+
+        (new GdRenderer())->render($icon[0], ['w' => $w, 'h' => $h]);
+    }
+
+    public function testFailedResizeIsRejected(): void
+    {
+        $renderer = new class extends GdRenderer {
+            protected function resize(GdImage $gd, int $w, int $h): mixed
+            {
+                return false;
+            }
+        };
+        $icon = $this->parseIcon('24bit-32px-sample.ico');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Failed to resize image');
+
+        $renderer->render($icon[0], ['w' => 64, 'h' => 64]);
     }
 
     public function testInvalidPngDataIsRejected(): void

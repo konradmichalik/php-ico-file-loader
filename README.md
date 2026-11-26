@@ -27,13 +27,26 @@ composer require konradmichalik/php-ico-file-loader
 ## ⚡ Usage
 
 ```php
-$loader = new KonradMichalik\PhpIcoFileLoeader\Parser\IcoFileService;
+$loader = new KonradMichalik\PhpIcoFileLoader\IcoFileService;
 $im = $loader->extractIcon('/path/to/icon.ico', 32, 32);
 
 imagepng($im, '/path/to/output.png');
 ```
 
 Pass untrusted bytes, such as a downloaded favicon, to `fromString()`. `from()` and `extractIcon()` fall back to treating unrecognised data as a local file path.
+
+PNG data is rejected above 1024 x 1024 pixels, for standalone PNGs and for PNGs inside an ICO. To raise the limit, pass it to the parser and to the renderer:
+
+```php
+use KonradMichalik\PhpIcoFileLoader\IcoFileService;
+use KonradMichalik\PhpIcoFileLoader\Parser\IcoParser;
+use KonradMichalik\PhpIcoFileLoader\Renderer\GdRenderer;
+
+$loader = new IcoFileService(
+    new GdRenderer(maxPngPixels: 2048 * 2048),
+    new IcoParser(maxPngPixels: 2048 * 2048),
+);
+```
 
 ## 💛 Acknowledgements
 

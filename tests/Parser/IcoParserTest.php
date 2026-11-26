@@ -131,6 +131,20 @@ final class IcoParserTest extends IcoTestCase
         $parser->parse($ico);
     }
 
+    public function testPaletteSizeFallsBackToBitDepthWhenHeaderAndDirectoryAreZero(): void
+    {
+        $icon = (new IcoParser())->parse(self::fourBitIco(0, 0, 16));
+
+        $this->assertCount(16, $icon[0]->palette);
+    }
+
+    public function testPaletteSizeComesFromHeaderNotDirectory(): void
+    {
+        $icon = (new IcoParser())->parse(self::fourBitIco(16, 2, 2));
+
+        $this->assertCount(2, $icon[0]->palette);
+    }
+
     public function testNegativeImageOffsetThrows(): void
     {
         // fileOffset 0 becomes negative once the header/dir-entry region is subtracted
@@ -155,6 +169,34 @@ final class IcoParserTest extends IcoTestCase
         (new IcoParser())->parse(self::bombPng(100000, 100000));
     }
 
+    public function testPngAboveDefaultLimitIsRejected(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size');
+
+        (new IcoParser())->parse(self::bombPng(2000, 2000));
+    }
+
+    public function testPngLimitIsConfigurable(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exceed the maximum allowed size of 10000 pixels');
+
+        (new IcoParser(10000))->parse(self::bombPng(101, 100));
+    }
+
+    public function testStandalonePngAtDefaultLimitIsAccepted(): void
+    {
+        $gd = imagecreatetruecolor(1024, 1024);
+        ob_start();
+        imagepng($gd);
+        $png = (string) ob_get_clean();
+
+        $icon = (new IcoParser())->parse($png);
+
+        $this->assertSame('1024x1024 pixel PNG @ 32 bits/pixel', $icon[0]->getDescription());
+    }
+
     public function testTooShortDataIsNotSupported(): void
     {
         $parser = new IcoParser();
@@ -163,13 +205,88 @@ final class IcoParserTest extends IcoTestCase
         $this->assertFalse($parser->isSupportedBinaryString('ab'));
     }
 
-    public function testTruncatedDirectoryEntriesStopParsing(): void
+    public function testDirectoryLargerThanFileThrows(): void
     {
         // header announces one entry, but not enough bytes for a full ICONDIRENTRY
         $ico = pack('vvv', 0, 1, 1).'abcd';
 
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid icon directory');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testTooManyDirectoryEntriesThrow(): void
+    {
+        $count = 257;
+        $ico = pack('vvv', 0, 1, $count).str_repeat(pack('CCCCvvVV', 1, 1, 0, 0, 1, 32, 0, 0), $count);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid icon directory');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testBmpEntryExceedingFileThrows(): void
+    {
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 4, 8, 1, 32, 0, 0, 0, 0, 0, 0);
+        $icoHeader = pack('vvv', 0, 1, 1);
+        $dirEntry = pack('CCCCvvVV', 4, 4, 0, 0, 1, 32, strlen($bmpInfoHeader) + 1000, 22);
+        $ico = $icoHeader.$dirEntry.$bmpInfoHeader;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid BMP data: required');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testEntriesSharingOnePayloadThrow(): void
+    {
+        $count = 3;
+        $bmp = pack('VVVvvVVVVVV', 40, 256, 512, 1, 32, 0, 0, 0, 0, 0, 0).str_repeat("\x00", 4096);
+        $entry = pack('CCCCvvVV', 0, 0, 0, 0, 1, 32, strlen($bmp), 6 + $count * 16);
+        $ico = pack('vvv', 0, 1, $count).str_repeat($entry, $count).$bmp;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('declare more data than the file contains');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testInvalidBmpHeaderSizeThrows(): void
+    {
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 0, 2, 4, 1, 32, 0, 0, 0, 0, 0, 0);
+        $entryData = $bmpInfoHeader.str_repeat("\x00", 24);
+        $ico = pack('vvv', 0, 1, 1).pack('CCCCvvVV', 2, 2, 0, 0, 1, 32, strlen($entryData), 22).$entryData;
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid BMP data: header size');
+
+        (new IcoParser())->parse($ico);
+    }
+
+    public function testBmpDataIsLimitedToEntrySize(): void
+    {
+        // 2x2 32-bit BMP: 40 byte header + 16 byte pixels + 8 byte mask, followed by the next image
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 2, 4, 1, 32, 0, 0, 0, 0, 0, 0);
+        $entryData = $bmpInfoHeader.str_repeat("\x11", 16).str_repeat("\x00", 8);
+        $ico = pack('vvv', 0, 1, 1).pack('CCCCvvVV', 2, 2, 0, 0, 1, 32, strlen($entryData), 22).$entryData.str_repeat("\xFF", 64);
+
         $icon = (new IcoParser())->parse($ico);
-        $this->assertCount(0, $icon);
+
+        $this->assertSame(24, strlen($icon[0]->bmpData));
+    }
+
+    public function testBmpDataIsLimitedToDimensions(): void
+    {
+        // 1x1 image whose entry carries a large trailing payload
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 1, 2, 1, 32, 0, 0, 0, 0, 0, 0);
+        $entryData = $bmpInfoHeader.str_repeat("\x00", 8).str_repeat("\xFF", 100000);
+        $ico = pack('vvv', 0, 1, 1).pack('CCCCvvVV', 1, 1, 0, 0, 1, 32, strlen($entryData), 22).$entryData;
+
+        $icon = (new IcoParser())->parse($ico);
+
+        $this->assertSame(8, strlen($icon[0]->bmpData));
     }
 
     public function testBmpWithInsufficientHeaderDataThrows(): void
@@ -244,10 +361,12 @@ final class IcoParserTest extends IcoTestCase
         (new IcoParser())->parse($ico);
     }
 
-    private static function bombPng(int $width, int $height): string
+    private static function fourBitIco(int $dirColorCount, int $colorsUsed, int $paletteEntries): string
     {
-        $ihdr = pack('NN', $width, $height)."\x08\x06\x00\x00\x00";
+        $bmpInfoHeader = pack('VVVvvVVVVVV', 40, 8, 16, 1, 4, 0, 0, 0, 0, $colorsUsed, 0);
+        $imageData = $bmpInfoHeader.str_repeat("\x00\x00\x00\x00", $paletteEntries).str_repeat("\x00", 64);
+        $dirEntry = pack('CCCCvvVV', 8, 8, $dirColorCount, 0, 1, 4, strlen($imageData), 22);
 
-        return "\x89PNG\r\n\x1a\n".pack('N', 13).'IHDR'.$ihdr.pack('N', crc32('IHDR'.$ihdr));
+        return pack('vvv', 0, 1, 1).$dirEntry.$imageData;
     }
 }
