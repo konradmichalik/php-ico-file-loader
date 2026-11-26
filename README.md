@@ -33,6 +33,8 @@ $im = $loader->extractIcon('/path/to/icon.ico', 32, 32);
 imagepng($im, '/path/to/output.png');
 ```
 
+Pass untrusted bytes, such as a downloaded favicon, to `fromString()`. `from()` and `extractIcon()` fall back to treating unrecognised data as a local file path.
+
 PNG data is rejected above 1024 x 1024 pixels, for standalone PNGs and for PNGs inside an ICO. To raise the limit, pass it to the parser and to the renderer:
 
 ```php

@@ -14,13 +14,14 @@ declare(strict_types=1);
 namespace KonradMichalik\PhpIcoFileLoader;
 
 use DomainException;
-use Exception;
 use InvalidArgumentException;
 use KonradMichalik\PhpIcoFileLoader\Model\{Icon, IconImage};
 use KonradMichalik\PhpIcoFileLoader\Parser\{IcoParser, ParserInterface};
 use KonradMichalik\PhpIcoFileLoader\Renderer\{GdRenderer, RendererInterface};
 
 use function sprintf;
+use function str_contains;
+use function strlen;
 
 /**
  * IcoFileService.
@@ -30,6 +31,9 @@ use function sprintf;
  */
 class IcoFileService
 {
+    private const MAX_FILE_SIZE = 10485760;
+    private const INVALID_ICON_MESSAGE = 'Invalid ICO file format';
+
     /**
      * IcoFileService constructor.
      *
@@ -110,6 +114,9 @@ class IcoFileService
      * This is a useful lower level member which can be used to inspect an icon before
      * rendering a particular image within it with renderImage.
      *
+     * Data that is not an ICO or PNG is only treated as a path if it can be one. Pass untrusted
+     * bytes to fromString() so that they are never interpreted as a path.
+     *
      * @param string $dataOrFile either filename or binary data
      *
      * @throws InvalidArgumentException if file is not found or invalid
@@ -118,6 +125,16 @@ class IcoFileService
     {
         if ($this->parser->isSupportedBinaryString($dataOrFile)) {
             return $this->parser->parse($dataOrFile);
+        }
+
+        if (str_contains($dataOrFile, "\0") || strlen($dataOrFile) > \PHP_MAXPATHLEN) {
+            throw new InvalidArgumentException(self::INVALID_ICON_MESSAGE);
+        }
+
+        $this->assertNoStreamWrapper($dataOrFile);
+
+        if (!is_file($dataOrFile)) {
+            throw new InvalidArgumentException(self::INVALID_ICON_MESSAGE);
         }
 
         return $this->fromFile($dataOrFile);
@@ -132,23 +149,25 @@ class IcoFileService
      *
      * @param string $file local filesystem path to a .ico file
      *
-     * @throws InvalidArgumentException if the path uses a stream wrapper, or the file is not found or invalid
+     * @throws InvalidArgumentException if the path uses a stream wrapper, or the file is not found, too large or invalid
      */
     public function fromFile(string $file): Icon
     {
-        if (1 === preg_match('#^[a-z][a-z0-9+.\-]*://#i', $file)) {
-            throw new InvalidArgumentException('Stream wrappers are not allowed; pass a local file path or the binary data directly.');
+        $this->assertNoStreamWrapper($file);
+
+        if (!is_file($file)) {
+            throw new InvalidArgumentException('File could not be loaded.');
         }
 
-        try {
-            $data = @file_get_contents($file);
-            if (false !== $data) {
-                return $this->parser->parse($data);
-            }
+        $data = @file_get_contents($file, false, null, 0, self::MAX_FILE_SIZE + 1);
+        if (false === $data) {
             throw new InvalidArgumentException('File could not be loaded.');
-        } catch (Exception $e) {
-            throw new InvalidArgumentException(sprintf('File could not be loaded: %s', $e->getMessage()), 0, $e);
         }
+        if (strlen($data) > self::MAX_FILE_SIZE) {
+            throw new InvalidArgumentException(sprintf('File is too large, the maximum is %d bytes.', self::MAX_FILE_SIZE));
+        }
+
+        return $this->parser->parse($data);
     }
 
     /**
@@ -161,5 +180,12 @@ class IcoFileService
     public function fromString(string $data): Icon
     {
         return $this->parser->parse($data);
+    }
+
+    private function assertNoStreamWrapper(string $path): void
+    {
+        if (1 === preg_match('#^[a-z][a-z0-9+.\-]*://#i', $path)) {
+            throw new InvalidArgumentException('Stream wrappers are not allowed; pass a local file path or the binary data directly.');
+        }
     }
 }
